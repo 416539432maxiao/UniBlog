@@ -1,10 +1,16 @@
 package uniblog
 
 import (
+	"errors"
 	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
+	"net/http"
 
 	"github.com/spf13/cobra"
 )
+
+var cfgFile string
 
 // NewMiniBlogCommand 创建一个 *cobra.Command 对象. 之后，可以使用 Command 对象的 Execute 方法来启动应用程序.
 func NewMiniBlogCommand() *cobra.Command {
@@ -36,12 +42,48 @@ Find more miniblog information at:
 			return nil
 		},
 	}
+	// 以下设置，使得 initConfig 函数在每个命令运行时都会被调用以读取配置
+	cobra.OnInitialize(initConfig)
+
+	// 在这里您将定义标志和配置设置。
+
+	// Cobra 支持持久性标志(PersistentFlag)，该标志可用于它所分配的命令以及该命令下的每个子命令
+	cmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "The path to the miniblog configuration file. Empty string for no configuration file.")
+
+	// Cobra 也支持本地标志，本地标志只能在其所绑定的命令上使用
+	cmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
 	return cmd
 }
 
 // run 函数是实际的业务代码入口函数.
 func run() error {
-	fmt.Println("Hello MiniBlog!")
+
+	//设置Gin模式
+	gin.SetMode(viper.GetString("runmode"))
+
+	//创建gin引擎
+	g := gin.New()
+
+	//注册404Handler
+	g.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"code": 10003, "message": "page not found."})
+
+	})
+
+	g.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+
+	})
+
+	//创建HTTP实例
+	httpsrv := &http.Server{Addr: viper.GetString("addr"), Handler: g}
+
+	//打印一条日志
+
+	if err := httpsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		//打印一条日志
+	}
+
 	return nil
 }
