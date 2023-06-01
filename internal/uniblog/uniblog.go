@@ -1,11 +1,17 @@
 package uniblog
 
 import (
+	mw "UniBlog/internal/pkg/middleware"
+	"context"
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -65,6 +71,10 @@ func run() error {
 	//创建gin引擎
 	g := gin.New()
 
+	//添加全局中间件//还需要完成跨域中间件.和安全中间件
+	mws := []gin.HandlerFunc{gin.Recovery(), mw.RequestID()}
+	g.Use(mws...)
+
 	//注册404Handler
 	g.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 10003, "message": "page not found."})
@@ -81,9 +91,34 @@ func run() error {
 
 	//打印一条日志
 
-	if err := httpsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		//打印一条日志
+	//为了避免服务器被主线程阻塞，所以新开一个goroutine
+	go func() {
+		if err := httpsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			//打印一条日志
+		}
+
+	}()
+
+	//优雅关停服务
+
+	//该通道用于接受关停信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM) //signal捕获到信号之后发送到quit通道；
+
+	<-quit //在没有接受到信号前，系统阻塞在这里；
+	//记录一条日志；服务器正在关停....
+
+	//创建CTX用于通知服务器goroutine,它有秒实践完成目前正在处理的请求
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := httpsrv.Shutdown(ctx); err != nil {
+		//记录一条日志；
+		return err
 	}
+
+	//程序退出；
 
 	return nil
 }
